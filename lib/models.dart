@@ -50,6 +50,7 @@ class MessagesModel with ChangeNotifier {
   }
 
   int wsConnectionErrorAttempt = 0;
+  bool receivedFirstWsMessage;
 
   MessagesModel({
     @required this.name,
@@ -73,10 +74,14 @@ class MessagesModel with ChangeNotifier {
       _streamSubscription = _channel.stream
           .map((event) => jsonDecode(event))
           .listen(
-              (event) => _messages.add((_messages.value ?? [])..add(event)),
+              (event) {
+                receivedFirstWsMessage = true;
+                _messages.add((_messages.value ?? [])..add(event));
+              },
       onError: (e) {
                 print('_channel.stream Error: $e');
                 wsConnectionErrorAttempt++;
+                receivedFirstWsMessage = false;
                 if (wsConnectionErrorAttempt < 3) {
                   Future.microtask(() => _createChannel());
                 } else {
@@ -105,6 +110,7 @@ class MessagesModel with ChangeNotifier {
       print('ChannelSink close error $e');
       return null;
     });
+    receivedFirstWsMessage = false;
   }
 
   final String name;
@@ -118,7 +124,7 @@ class MessagesModel with ChangeNotifier {
   bool get connected => _channel != null;
   Stream<List> get messages => _messages.stream;
   bool send(String message) {
-    if (_channel != null && _channel.closeCode == null) {
+    if (_channel != null && _channel.closeCode == null && receivedFirstWsMessage) {
       try {
         _channel.sink.add(jsonEncode({'text': message}));
         return true;
