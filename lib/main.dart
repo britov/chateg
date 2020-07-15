@@ -92,6 +92,7 @@ class UsernameInputPage extends StatefulWidget {
 
 class _UsernameInputPageState extends State<UsernameInputPage> {
   final _key = GlobalKey<FormFieldState<String>>();
+  final alphaNumericText = RegExp(r'^[\w\s\.]+$');
 
   @override
   Widget build(BuildContext context) {
@@ -123,9 +124,10 @@ class _UsernameInputPageState extends State<UsernameInputPage> {
               keyboardType: TextInputType.text,
               textInputAction: TextInputAction.next,
               onFieldSubmitted: (_) => _submit(context),
-              validator: (name) {
+              validator: (n) {
+                var name = n.trim();
                 if (name.length <= 1) {
-                  return 'Короткое имя';
+                  return 'Необходимо больше одного символа';
                 }
                 return null;
               },
@@ -138,7 +140,7 @@ class _UsernameInputPageState extends State<UsernameInputPage> {
 
   void _submit(BuildContext context) {
     if (_key.currentState.validate()) {
-      context.read<UserModel>().name = _key.currentState.value;
+      context.read<UserModel>().name =  _key.currentState.value;
       Navigator.of(context).pushNamedAndRemoveUntil(Routes.chat, (_) => false);
     }
   }
@@ -247,7 +249,16 @@ class _MyHomePageState extends State<MyHomePage> {
                       stream: model.messages,
                       builder: (context, state) {
                         if (state.connectionState == ConnectionState.waiting) {
-                          return Center(child: CircularProgressIndicator());
+                          return Center(child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              CircularProgressIndicator(),
+                              Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: Text('Подключение и ожидание соообщений'),
+                              )
+                            ],
+                          ));
                         }
                         if (!state.hasData) {
                           return Center(child: Text('Все молчат, напиши первым'));
@@ -292,8 +303,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void _sendMessage(BuildContext context) {
     var message = _controller.text.trim();
-    if (message.isNotEmpty) {
-      context.read<MessagesModel>().send(message);
+    if (message.isNotEmpty && context.read<MessagesModel>().send(message)) {
       _controller.clear();
     }
   }

@@ -17,8 +17,8 @@ class UserModel with ChangeNotifier {
 
   String get name => _name;
   set name(String name) {
-    _name = name;
-    _sharedPrefUtil.setMyName(name);
+    _name = name.trim();
+    _sharedPrefUtil.setMyName(_name);
     notifyListeners();
   }
 
@@ -48,7 +48,9 @@ class MessagesModel with ChangeNotifier {
     channel.sink.close(status.goingAway);
     return true;
   }
-  
+
+  int wsConnectionErrorAttempt = 0;
+
   MessagesModel({
     @required this.name,
     @required this.serverName
@@ -62,22 +64,47 @@ class MessagesModel with ChangeNotifier {
 
   void _createChannel() async {
     try {
-      _streamSubscription?.cancel();
-      await _channel?.sink?.close(status.goingAway);
+      _closeChannel();
 
-      _channel = IOWebSocketChannel.connect("ws://$serverName/ws?name=$name");
+      _channel = IOWebSocketChannel.connect(
+          "ws://$serverName/ws?name=${Uri.encodeQueryComponent(name)}",
+          pingInterval: Duration(seconds: 20)
+      );
       _streamSubscription = _channel.stream
           .map((event) => jsonDecode(event))
           .listen(
               (event) => _messages.add((_messages.value ?? [])..add(event)),
       onError: (e) {
                 print('_channel.stream Error: $e');
-                Future.microtask(() => _createChannel());
-      });
+                wsConnectionErrorAttempt++;
+                if (wsConnectionErrorAttempt < 3) {
+                  Future.microtask(() => _createChannel());
+                } else {
+                  wsConnectionErrorAttempt = 0;
+                  Future.delayed(Duration(seconds: 20), () => _createChannel());
+                }
+      },
+      cancelOnError: true,
+        onDone: () {
+          _closeChannel();
+          _channel = null;
+        }
+      );
       send('Всем чмоки в этом чате!');
     } catch (e) {
       print('MessagesModel connect error - $e');
     }
+  }
+
+  void _closeChannel() {
+    _streamSubscription?.cancel()?.catchError((e) {
+      print('ChannelSubscription cancel error $e');
+      return null;
+    });
+    _channel?.sink?.close(status.goingAway)?.catchError((e) {
+      print('ChannelSink close error $e');
+      return null;
+    });
   }
 
   final String name;
@@ -90,8 +117,16 @@ class MessagesModel with ChangeNotifier {
 
   bool get connected => _channel != null;
   Stream<List> get messages => _messages.stream;
-  send(String message) {
-    _channel?.sink?.add(jsonEncode({'text': message}));
+  bool send(String message) {
+    if (_channel != null && _channel.closeCode == null) {
+      try {
+        _channel.sink.add(jsonEncode({'text': message}));
+        return true;
+      } catch (e) {
+        print('_channel.sink error - $e');
+      }
+    }
+    return false;
   }
 
   @override
